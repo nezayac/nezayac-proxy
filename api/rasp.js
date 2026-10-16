@@ -2,9 +2,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Max-Age', '86400');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(204).end();
   }
 
   const query = req.query || {};
@@ -13,17 +14,18 @@ export default async function handler(req, res) {
     if (k !== 'path') params.append(k, query[k]);
   });
 
-  const path = query.path || 'v3.0/search/';
-  const target = 'https://rasp.yandex.ru/' + path + '?' + params.toString();
+  // Важно: /v3.0/ путь, и домен api.rasp.yandex.net
+  const path = query.path || 'search';
+  const yandexPath = path.startsWith('v3.0') ? path : ('v3.0/' + path + '/');
+  const target = 'https://api.rasp.yandex.net/' + yandexPath + '?' + params.toString();
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
     const response = await fetch(target, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
         'Accept': 'application/json'
       }
     });
@@ -31,11 +33,11 @@ export default async function handler(req, res) {
     clearTimeout(timeout);
     const data = await response.text();
 
-    return res.status(200)
-      .setHeader('Content-Type', 'application/json; charset=utf-8')
-      .send(data);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    return res.status(response.status).send(data);
   } catch (e) {
-    return res.status(200).json({
+    return res.status(504).json({
       error: e.name === 'AbortError' ? 'timeout' : 'network_error',
       message: e.message || 'Не удалось получить данные'
     });
